@@ -66,3 +66,6 @@ async def get_work_order( params ) -> Dict[str, Any]:
         "page_size": params.page_size,
         "total_pages": (total + params.page_size - 1) // params.page_size,
     }
+
+def sync_work_order():
+    pass

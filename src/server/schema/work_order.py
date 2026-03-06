@@ -1,4 +1,6 @@
 # src/server/schemas/message.py
+from datetime import date
+
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -22,3 +24,12 @@ class WorkOrderQuery(BaseModel):
                 "page_size": 20
             }
         }
+
+# start: Optional[date] = None,
+# end: Optional[date] = None,
+# optimize: bool = False,
+class WorkOrderSync(BaseModel):
+    """工单同步参数"""
+    start: Optional[date] = Field(None, description="开始日期"),
+    end: Optional[date] = Field(None, description="结束日期"),
+    optimize: bool = Field(False, description="同步优化表")
