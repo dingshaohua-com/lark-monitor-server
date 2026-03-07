@@ -2,6 +2,9 @@ import re
 from typing import Dict, Any, List
 from beanie import operators as op  # 提供 $gt, $or 等操作符
 from server.model.work_order import WorkOrder  # 你的 Beanie 模型
+from server.utils.sync_helper import sync_msg
+from server.utils.db_helper import get_collections
+
 
 async def get_work_order( params ) -> Dict[str, Any]:
     """查询主消息列表"""
@@ -67,5 +70,27 @@ async def get_work_order( params ) -> Dict[str, Any]:
         "total_pages": (total + params.page_size - 1) // params.page_size,
     }
 
-def sync_work_order():
-    pass
+
+async def get_replies(msg_id: str) -> List[Dict]:
+    """获取某条主消息的所有回复，按时间正序"""
+    collection, optimize_collection = get_collections()
+    cursor = (
+        optimize_collection
+        .find({"parent_id": msg_id}, {"_id": 0})
+        .sort("create_time", 1)
+    )
+    return await _serialize(cursor)
+
+
+async def _serialize(cursor) -> List[Dict]:
+    items: List[Dict] = []
+    async for doc in cursor:
+        if "sync_at" in doc:
+            doc["sync_at"] = doc["sync_at"].isoformat()
+        items.append(doc)
+    return items
+
+
+
+async def sync_work_order(params):
+    return await sync_msg(start=params.start, end=params.end, optimize=params.optimize)

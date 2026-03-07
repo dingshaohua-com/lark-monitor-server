@@ -1,6 +1,6 @@
 import os
 import httpx
-import msg_monitor.utils.store as store
+import monitor.utils.store as store
 from urllib.parse import urlparse
 
 # 白名单工具函数：是否在白名单中
@@ -24,6 +24,8 @@ def request_interceptor(request):
         return
     # 2. 获取 Token
     token = store.tenant_access_token
+
+    print(12222, store.tenant_access_token)
     # 将token放到请求头
     if token:
         request.headers["Authorization"] = f"Bearer {token}"

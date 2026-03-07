@@ -2,6 +2,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from server.model.work_order import WorkOrder  # 导入模型
 
+RAW_COLLECTION = "raw_msg"
+OPT_COLLECTION = "optimize_msg"
+
 client: AsyncIOMotorClient | None = None
 
 
@@ -38,3 +41,14 @@ async def close_db():
     if client:
         client.close()
         print("MongoDB 连接已关闭")
+
+
+def get_db():
+    """获取数据库实例（需在 init_db 之后调用）"""
+    if client is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+    return client["lark_monitor"]
+
+def get_collections():
+    db = get_db()
+    return db[RAW_COLLECTION], db[OPT_COLLECTION]

@@ -4,15 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from server.utils.db_helper import init_db, close_db
+from monitor.service.account import login
 
 
 
 @asynccontextmanager
 async def on_start(app: FastAPI)-> AsyncGenerator[None, None]:
-    await init_db() # 链接数据库
-    print("🚀 启动中...")
-    yield  # 必须 yield，这里开始接收请求
-    await close_db() # 关闭数据库连接
+    login()
+    await init_db()
+    print("🚀 启动成功...")
+    yield
+    await close_db()
 server = FastAPI(title="Lark Msg Monitor API", version="0.0.1", lifespan=on_start)
 
 # 解决跨域问题
