@@ -20,8 +20,8 @@ async def get_work_order( params ) -> Dict[str, Any]:
     # 3. 日期范围查询（create_date 是字符串格式 "2026-03-05"）
     if params.start_date and params.end_date:
         query = query.find(
-            (WorkOrder.create_date >= params.start_date) &
-            (WorkOrder.create_date <= params.end_date)
+            WorkOrder.create_date >= params.start_date,
+            WorkOrder.create_date <= params.end_date
         )
     elif params.start_date:
         query = query.find(WorkOrder.create_date >= params.start_date)
