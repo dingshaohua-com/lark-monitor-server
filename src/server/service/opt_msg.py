@@ -1,7 +1,5 @@
 import json
 import re
-from datetime import datetime, timezone
-
 from pymongo import UpdateOne
 
 from server.utils.db_helper import get_collection
@@ -82,7 +80,6 @@ def _parse_raw(raw: dict) -> dict:
     """保留原始字段，仅将 body 解析为结构化 content。"""
     doc = {k: v for k, v in raw.items() if k != "body"}
     doc["content"] = _parse_body(raw.get("msg_type", ""), raw.get("body"))
-    doc["sync_at"] = datetime.now(timezone.utc).isoformat()
     return doc
 
 
