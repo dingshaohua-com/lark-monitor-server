@@ -1,5 +1,5 @@
 
-def _message_to_doc(msg) -> dict:
+def message_to_doc(msg) -> dict:
     """将飞书 SDK Message 对象转为 MongoDB 文档。"""
     doc = {
         "_id": msg.message_id,
@@ -40,5 +40,3 @@ def _message_to_doc(msg) -> dict:
         ]
 
     return doc
-
-
