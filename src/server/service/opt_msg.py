@@ -1,4 +1,7 @@
+from datetime import datetime, timedelta
+
 from pymongo import UpdateOne
+
 from server.utils.db_helper import get_collection
 from server.utils.msg_parser import parse_raw
 
@@ -36,6 +39,7 @@ async def get_work_order(
     priority: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    has_bot_reply: str | None = None,
 ) -> dict:
     """查询工单列表：根消息 + 关联的全部回复内容。"""
     col = get_collection("opt_msg")
@@ -56,30 +60,63 @@ async def get_work_order(
     if end_date:
         match_filter.setdefault("content.fields.feedback_time", {})["$lte"] = end_date + " 23:59:59"
 
-    pipeline = [
-        {"$match": match_filter},
-        {"$sort": {"create_time": -1}},
-        {"$skip": skip},
-        {"$limit": page_size},
-        {
-            "$lookup": {
-                "from": "opt_msg",
-                "localField": "message_id",
-                "foreignField": "root_id",
-                "as": "replies",
-            }
-        },
-        {
-            "$addFields": {
-                "reply_count": {"$size": "$replies"},
-                "replies": {
-                    "$sortArray": {"input": "$replies", "sortBy": {"create_time": 1}}
-                },
-            }
-        },
-    ]
+    lookup_stage = {
+        "$lookup": {
+            "from": "opt_msg",
+            "localField": "message_id",
+            "foreignField": "root_id",
+            "as": "replies",
+        }
+    }
+    add_fields_stage = {
+        "$addFields": {
+            "reply_count": {"$size": "$replies"},
+            "has_bot_reply": {
+                "$gt": [
+                    {"$size": {"$filter": {
+                        "input": "$replies",
+                        "cond": {"$eq": ["$$this.sender.sender_type", "app"]},
+                    }}},
+                    0,
+                ]
+            },
+            "replies": {
+                "$sortArray": {"input": "$replies", "sortBy": {"create_time": 1}}
+            },
+        }
+    }
 
-    total = await col.count_documents(match_filter)
+    if has_bot_reply:
+        bot_filter = {"has_bot_reply": True} if has_bot_reply == "yes" else {"has_bot_reply": False}
+        pipeline = [
+            {"$match": match_filter},
+            lookup_stage,
+            add_fields_stage,
+            {"$match": bot_filter},
+            {"$sort": {"create_time": -1}},
+            {"$skip": skip},
+            {"$limit": page_size},
+        ]
+        count_pipeline = [
+            {"$match": match_filter},
+            lookup_stage,
+            add_fields_stage,
+            {"$match": bot_filter},
+            {"$count": "total"},
+        ]
+        count_result = await col.aggregate(count_pipeline).to_list(length=1)
+        total = count_result[0]["total"] if count_result else 0
+    else:
+        pipeline = [
+            {"$match": match_filter},
+            {"$sort": {"create_time": -1}},
+            {"$skip": skip},
+            {"$limit": page_size},
+            lookup_stage,
+            add_fields_stage,
+        ]
+        total = await col.count_documents(match_filter)
+
     items = await col.aggregate(pipeline).to_list(length=page_size)
 
     for item in items:
@@ -92,4 +129,75 @@ async def get_work_order(
         "page": page,
         "page_size": page_size,
         "items": items,
+    }
+
+
+
+async def _count_bot_stats(col, start: str, end: str) -> dict:
+    """统计指定日期范围内工单总数和机器人参与数。"""
+    match_filter: dict = {
+        "root_id": {"$in": [None, ""]},
+        "content.fields.feedback_time": {"$gte": start, "$lte": end + " 23:59:59"},
+    }
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$lookup": {
+                "from": "opt_msg",
+                "localField": "message_id",
+                "foreignField": "root_id",
+                "as": "replies",
+            }
+        },
+        {
+            "$addFields": {
+                "has_bot_reply": {
+                    "$gt": [
+                        {"$size": {"$filter": {
+                            "input": "$replies",
+                            "cond": {"$eq": ["$$this.sender.sender_type", "app"]},
+                        }}},
+                        0,
+                    ]
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "bot_count": {"$sum": {"$cond": ["$has_bot_reply", 1, 0]}},
+            }
+        },
+    ]
+    result = await col.aggregate(pipeline).to_list(length=1)
+    if not result:
+        return {"total": 0, "bot_count": 0, "bot_ratio": 0}
+    r = result[0]
+    total = r["total"]
+    bot_count = r["bot_count"]
+    return {
+        "total": total,
+        "bot_count": bot_count,
+        "bot_ratio": round(bot_count / total * 100, 1) if total else 0,
+    }
+
+
+async def analyze(start_date: str, end_date: str) -> dict:
+    """分析工单数据：机器人参与占比 + 与两周前对比。"""
+    col = get_collection("opt_msg")
+
+    current = await _count_bot_stats(col, start_date, end_date)
+
+    fmt = "%Y-%m-%d"
+    prev_start = (datetime.strptime(start_date, fmt) - timedelta(weeks=2)).strftime(fmt)
+    prev_end = (datetime.strptime(end_date, fmt) - timedelta(weeks=2)).strftime(fmt)
+    previous = await _count_bot_stats(col, prev_start, prev_end)
+
+    ratio_change = round(current["bot_ratio"] - previous["bot_ratio"], 1)
+
+    return {
+        "current": {**current, "start_date": start_date, "end_date": end_date},
+        "previous": {**previous, "start_date": prev_start, "end_date": prev_end},
+        "ratio_change": ratio_change,
     }

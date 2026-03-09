@@ -8,6 +8,36 @@ from server.utils.db_helper import get_collection
 from server.utils.lark_client import get_lark_client
 
 
+async def status() -> dict:
+    """返回 raw_msg 集合的统计信息。"""
+    col = get_collection("raw_msg")
+    total = await col.count_documents({})
+    main_count = await col.count_documents({"root_id": {"$in": [None, ""]}})
+    reply_count = total - main_count
+
+    last_doc = await col.find_one(sort=[("update_time", -1)])
+    last_sync_at = last_doc.get("update_time") if last_doc else None
+
+    return {
+        "total": total,
+        "main_count": main_count,
+        "reply_count": reply_count,
+        "last_sync_at": last_sync_at,
+    }
+
+
+async def clear_all() -> dict:
+    """删除所有原始数据。"""
+    raw_col = get_collection("raw_msg")
+    opt_col = get_collection("opt_msg")
+    raw_result = await raw_col.delete_many({})
+    opt_result = await opt_col.delete_many({})
+    return {
+        "raw_deleted": raw_result.deleted_count,
+        "opt_deleted": opt_result.deleted_count,
+    }
+
+
 async def sync(start: date | None = None, end: date | None = None) -> dict:
     """从飞书群拉取原始消息（含话题回复）并写入 MongoDB raw_msg 集合。"""
     client = get_lark_client()

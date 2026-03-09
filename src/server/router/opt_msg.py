@@ -13,12 +13,23 @@ async def get_work_order(
     priority: str | None = Query(None, description="优先级，如 P0、P1"),
     start_date: str | None = Query(None, description="起始日期，如 2026-01-01"),
     end_date: str | None = Query(None, description="结束日期，如 2026-01-31"),
+    has_bot_reply: str | None = Query(None, description="是否有机器人回复：yes/no"),
 ):
     result = await opt_msg_service.get_work_order(
         page=page, page_size=page_size,
         keyword=keyword, priority=priority,
         start_date=start_date, end_date=end_date,
+        has_bot_reply=has_bot_reply,
     )
+    return {"data": result}
+
+
+@router.get("/analyze")
+async def analyze(
+    start_date: str = Query(..., description="起始日期，如 2026-03-01"),
+    end_date: str = Query(..., description="结束日期，如 2026-03-09"),
+):
+    result = await opt_msg_service.analyze(start_date=start_date, end_date=end_date)
     return {"data": result}
 
 

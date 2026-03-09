@@ -7,9 +7,16 @@ import server.service.raw_msg as raw_msg_service
 router = APIRouter(prefix="/raw-msg", tags=["raw-msg"])
 
 
-@router.get("/")
-async def get_msg():
-    pass
+@router.get("/status")
+async def get_status():
+    result = await raw_msg_service.status()
+    return {"data": result}
+
+
+@router.delete("/clear")
+async def clear_all():
+    result = await raw_msg_service.clear_all()
+    return {"data": result}
 
 
 @router.get("/sync")
