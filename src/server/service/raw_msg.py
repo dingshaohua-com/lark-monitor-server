@@ -11,18 +11,25 @@ from server.utils.lark_client import get_lark_client
 async def status() -> dict:
     """返回 raw_msg 集合的统计信息。"""
     col = get_collection("raw_msg")
+    meta_col = get_collection("sync_meta")
     total = await col.count_documents({})
     main_count = await col.count_documents({"root_id": {"$in": [None, ""]}})
     reply_count = total - main_count
 
-    last_doc = await col.find_one(sort=[("update_time", -1)])
-    last_sync_at = last_doc.get("update_time") if last_doc else None
+    meta = await meta_col.find_one({"_id": "raw_msg_sync"})
+    last_sync_at = meta.get("last_sync_at") if meta else None
+
+    root_filter = {"root_id": {"$in": [None, ""]}}
+    earliest = await col.find_one(root_filter, sort=[("create_time", 1)])
+    latest = await col.find_one(root_filter, sort=[("create_time", -1)])
 
     return {
         "total": total,
         "main_count": main_count,
         "reply_count": reply_count,
         "last_sync_at": last_sync_at,
+        "earliest_time": earliest.get("create_time") if earliest else None,
+        "latest_time": latest.get("create_time") if latest else None,
     }
 
 
@@ -38,18 +45,45 @@ async def clear_all() -> dict:
     }
 
 
-async def sync(start: date | None = None, end: date | None = None) -> dict:
-    """从飞书群拉取原始消息（含话题回复）并写入 MongoDB raw_msg 集合。"""
+async def sync(
+    mode: str = "continue",
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """从飞书群拉取原始消息（含话题回复）并写入 MongoDB raw_msg 集合。
+
+    mode: continue(从上次续更) / range(指定日期) / full(全量)
+    """
     client = get_lark_client()
     collection = get_collection("raw_msg")
     chat_id = os.environ["MONITOR_CHAT_ID"]
-
     now = datetime.now(timezone.utc)
-    start_dt = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc) if start else now - timedelta(days=30)
-    end_dt = datetime.combine(end, datetime.max.time(), tzinfo=timezone.utc) if end else now
 
-    start_ts = str(int(start_dt.timestamp()))
-    end_ts = str(int(end_dt.timestamp()))
+    start_ts: str | None = None
+    end_ts: str | None = None
+
+    if mode == "continue":
+        last_doc = await collection.find_one(sort=[("update_time", -1)])
+        if last_doc and last_doc.get("update_time"):
+            raw_ts = str(last_doc["update_time"])
+            ts_val = int(raw_ts) if raw_ts.isdigit() else int(datetime.fromisoformat(raw_ts).timestamp())
+            if ts_val > 1e12:
+                ts_val = ts_val // 1000
+            start_ts = str(ts_val)
+            start_dt = datetime.fromtimestamp(ts_val, tz=timezone.utc)
+        else:
+            start_dt = now - timedelta(days=30)
+            start_ts = str(int(start_dt.timestamp()))
+        end_dt = now
+        end_ts = str(int(now.timestamp()))
+    elif mode == "range":
+        start_dt = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc) if start else now - timedelta(days=7)
+        end_dt = datetime.combine(end, datetime.max.time(), tzinfo=timezone.utc) if end else now
+        start_ts = str(int(start_dt.timestamp()))
+        end_ts = str(int(end_dt.timestamp()))
+    else:
+        start_dt = now
+        end_dt = now
 
     total_fetched = 0
     total_upserted = 0
@@ -80,6 +114,14 @@ async def sync(start: date | None = None, end: date | None = None) -> dict:
         total_fetched += len(thread_items)
         total_upserted += upserted
         reply_count += len(thread_items)
+
+    meta_col = get_collection("sync_meta")
+    sync_at = datetime.now(timezone.utc).isoformat()
+    await meta_col.update_one(
+        {"_id": "raw_msg_sync"},
+        {"$set": {"last_sync_at": sync_at}},
+        upsert=True,
+    )
 
     return {
         "success": True,

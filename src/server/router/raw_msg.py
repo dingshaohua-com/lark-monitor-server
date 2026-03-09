@@ -21,8 +21,9 @@ async def clear_all():
 
 @router.get("/sync")
 async def sync(
-    start: date | None = Query(None, description="起始日期，如 2026-01-01"),
-    end: date | None = Query(None, description="结束日期，如 2026-01-31"),
+    mode: str = Query("continue", description="同步模式：continue(续更)/range(指定日期)/full(全量)"),
+    start: date | None = Query(None, description="起始日期（mode=range 时必传）"),
+    end: date | None = Query(None, description="结束日期（mode=range 时必传）"),
 ):
-    result = await raw_msg_service.sync(start=start, end=end)
+    result = await raw_msg_service.sync(mode=mode, start=start, end=end)
     return {"data": result}

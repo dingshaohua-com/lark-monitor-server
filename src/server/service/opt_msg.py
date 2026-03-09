@@ -93,7 +93,7 @@ async def get_work_order(
             lookup_stage,
             add_fields_stage,
             {"$match": bot_filter},
-            {"$sort": {"create_time": -1}},
+            {"$sort": {"content.fields.feedback_time": -1}},
             {"$skip": skip},
             {"$limit": page_size},
         ]
@@ -109,7 +109,7 @@ async def get_work_order(
     else:
         pipeline = [
             {"$match": match_filter},
-            {"$sort": {"create_time": -1}},
+            {"$sort": {"content.fields.feedback_time": -1}},
             {"$skip": skip},
             {"$limit": page_size},
             lookup_stage,
