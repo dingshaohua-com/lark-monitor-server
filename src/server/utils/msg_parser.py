@@ -48,15 +48,19 @@ def _parse_interactive(data: dict, raw_str: str) -> dict:
             row = [row]
         row_text = ""
         row_href = ""
+        has_content_text = False
         for node in row:
             tag = node.get("tag")
             if tag in ("text", "a"):
-                row_text += node.get("text", "")
+                node_text = node.get("text", "")
+                row_text += node_text
                 if tag == "a" and node.get("href"):
                     row_href = node["href"]
+                if tag == "text" and "【" in node_text:
+                    has_content_text = True
         if not row_text:
             continue
-        if row_href:
+        if row_href and not has_content_text:
             text_parts.append(f"【{row_text}】：{row_href}")
         else:
             text_parts.append(row_text)

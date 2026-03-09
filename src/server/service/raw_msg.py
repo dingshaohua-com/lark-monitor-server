@@ -9,7 +9,7 @@ from server.utils.lark_client import get_lark_client
 
 
 async def sync(start: date | None = None, end: date | None = None) -> dict:
-    """从飞书群拉取原始消息并写入 MongoDB raw_msg 集合。"""
+    """从飞书群拉取原始消息（含话题回复）并写入 MongoDB raw_msg 集合。"""
     client = get_lark_client()
     collection = get_collection("raw_msg")
     chat_id = os.environ["MONITOR_CHAT_ID"]
@@ -23,53 +23,94 @@ async def sync(start: date | None = None, end: date | None = None) -> dict:
 
     total_fetched = 0
     total_upserted = 0
-    page_token: str | None = None
 
-    while True:
-        builder = (
-            ListMessageRequest.builder()
-            .container_id_type("chat")
-            .container_id(chat_id)
-            .start_time(start_ts)
-            .end_time(end_ts)
-            .sort_type("ByCreateTimeAsc")
-            .page_size(50)
+    # 第一步：拉取群聊主消息
+    chat_items, upserted = await _fetch_messages(
+        client, collection, "chat", chat_id,
+        start_ts=start_ts, end_ts=end_ts,
+    )
+    total_fetched += len(chat_items)
+    total_upserted += upserted
+
+    # 第二步：对有 thread_id 的消息，拉取话题内的回复
+    processed_threads: set[str] = set()
+    reply_count = 0
+
+    for msg in chat_items:
+        thread_id = msg.get("thread_id")
+        if not thread_id or thread_id in processed_threads:
+            continue
+        processed_threads.add(thread_id)
+        root_msg_id = msg["message_id"]
+
+        thread_items, upserted = await _fetch_messages(
+            client, collection, "thread", thread_id,
+            skip_message_id=root_msg_id,
         )
-        if page_token:
-            builder = builder.page_token(page_token)
-
-        response = await client.im.v1.message.alist(builder.build())
-
-        if not response.success():
-            return {
-                "success": False,
-                "error": f"[{response.code}] {response.msg}",
-            }
-
-        items = response.data.items or []
-        total_fetched += len(items)
-
-        if items:
-            ops = []
-            for item in items:
-                # doc = _message_to_doc(item)
-                doc = json.loads(lark.JSON.marshal(item))
-                doc["_id"] = doc.get("message_id")
-                ops.append(UpdateOne({"_id": doc["_id"]}, {"$set": doc}, upsert=True))
-            result = await collection.bulk_write(ops)
-            total_upserted += result.upserted_count + result.modified_count
-
-        if not response.data.has_more:
-            break
-        page_token = response.data.page_token
+        total_fetched += len(thread_items)
+        total_upserted += upserted
+        reply_count += len(thread_items)
 
     return {
         "success": True,
         "total_fetched": total_fetched,
         "total_upserted": total_upserted,
+        "threads_synced": len(processed_threads),
+        "reply_count": reply_count,
         "time_range": {
             "start": start_dt.isoformat(),
             "end": end_dt.isoformat(),
         },
     }
 
+
+async def _fetch_messages(
+    client, collection,
+    container_type: str, container_id: str,
+    start_ts: str | None = None, end_ts: str | None = None,
+    skip_message_id: str | None = None,
+) -> tuple[list[dict], int]:
+    """拉取一个容器（chat 或 thread）内的所有消息并写入数据库。"""
+    all_items: list[dict] = []
+    total_upserted = 0
+    page_token: str | None = None
+
+    while True:
+        builder = (
+            ListMessageRequest.builder()
+            .container_id_type(container_type)
+            .container_id(container_id)
+            .page_size(50)
+        )
+        if start_ts:
+            builder = builder.start_time(start_ts)
+        if end_ts:
+            builder = builder.end_time(end_ts)
+        if page_token:
+            builder = builder.page_token(page_token)
+
+        response = await client.im.v1.message.alist(builder.build())
+
+        if not response.success():
+            break
+
+        items = response.data.items or []
+
+        if items:
+            ops = []
+            for item in items:
+                doc = json.loads(lark.JSON.marshal(item))
+                if skip_message_id and doc.get("message_id") == skip_message_id:
+                    continue
+                doc["_id"] = doc.get("message_id")
+                ops.append(UpdateOne({"_id": doc["_id"]}, {"$set": doc}, upsert=True))
+                all_items.append(doc)
+            if ops:
+                result = await collection.bulk_write(ops)
+                total_upserted += result.upserted_count + result.modified_count
+
+        if not response.data.has_more:
+            break
+        page_token = response.data.page_token
+
+    return all_items, total_upserted
