@@ -8,7 +8,6 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/home/apps/lark-monitor-server
-Environment=PYTHONPATH=/home/apps/lark-monitor-server/src
 EnvironmentFile=/home/apps/lark-monitor-server/.env
 ExecStart=/home/apps/lark-monitor-server/.venv/bin/uvicorn server.app:server --host 0.0.0.0 --port 8000
 Restart=on-failure
