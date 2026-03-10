@@ -1,0 +1,19 @@
+[Unit]
+Description=Lark Monitor Server
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/apps/lark-monitor-server
+EnvironmentFile=/home/apps/lark-monitor-server/.env
+ExecStart=/home/apps/lark-monitor-server/.venv/bin/uvicorn server.app:server --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
