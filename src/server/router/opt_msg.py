@@ -28,8 +28,11 @@ async def get_work_order(
 async def analyze(
     start_date: str = Query(..., description="起始日期，如 2026-03-01"),
     end_date: str = Query(..., description="结束日期，如 2026-03-09"),
+    deduplicate: bool = Query(False, description="是否对相似工单去重"),
 ):
-    result = await opt_msg_service.analyze(start_date=start_date, end_date=end_date)
+    result = await opt_msg_service.analyze(
+        start_date=start_date, end_date=end_date, deduplicate=deduplicate,
+    )
     return {"data": result}
 
 

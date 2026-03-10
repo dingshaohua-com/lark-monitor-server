@@ -183,16 +183,72 @@ async def _count_bot_stats(col, start: str, end: str) -> dict:
     }
 
 
-async def analyze(start_date: str, end_date: str) -> dict:
+async def _count_bot_stats_dedup(col, start: str, end: str) -> dict:
+    """带去重的统计：获取文档后基于内容相似度去重。"""
+    from server.utils.dedup import deduplicate_docs
+
+    match_filter: dict = {
+        "root_id": {"$in": [None, ""]},
+        "content.fields.feedback_time": {"$gte": start, "$lte": end + " 23:59:59"},
+    }
+    pipeline = [
+        {"$match": match_filter},
+        {
+            "$lookup": {
+                "from": "opt_msg",
+                "localField": "message_id",
+                "foreignField": "root_id",
+                "as": "replies",
+            }
+        },
+        {
+            "$addFields": {
+                "has_bot_reply": {
+                    "$gt": [
+                        {"$size": {"$filter": {
+                            "input": "$replies",
+                            "cond": {"$eq": ["$$this.sender.sender_type", "app"]},
+                        }}},
+                        0,
+                    ]
+                }
+            }
+        },
+        {"$project": {"content": 1, "has_bot_reply": 1}},
+    ]
+
+    docs = await col.aggregate(pipeline).to_list(length=None)
+
+    if not docs:
+        return {"total": 0, "bot_count": 0, "bot_ratio": 0, "original_total": 0}
+
+    original_total = len(docs)
+    groups = deduplicate_docs(docs)
+    total = len(groups)
+    bot_count = sum(
+        1 for group in groups
+        if any(docs[i].get("has_bot_reply", False) for i in group)
+    )
+
+    return {
+        "total": total,
+        "bot_count": bot_count,
+        "bot_ratio": round(bot_count / total * 100, 1) if total else 0,
+        "original_total": original_total,
+    }
+
+
+async def analyze(start_date: str, end_date: str, deduplicate: bool = False) -> dict:
     """分析工单数据：机器人参与占比 + 与两周前对比。"""
     col = get_collection("opt_msg")
+    count_fn = _count_bot_stats_dedup if deduplicate else _count_bot_stats
 
-    current = await _count_bot_stats(col, start_date, end_date)
+    current = await count_fn(col, start_date, end_date)
 
     fmt = "%Y-%m-%d"
     prev_start = (datetime.strptime(start_date, fmt) - timedelta(weeks=2)).strftime(fmt)
     prev_end = (datetime.strptime(end_date, fmt) - timedelta(weeks=2)).strftime(fmt)
-    previous = await _count_bot_stats(col, prev_start, prev_end)
+    previous = await count_fn(col, prev_start, prev_end)
 
     ratio_change = round(current["bot_ratio"] - previous["bot_ratio"], 1)
 
