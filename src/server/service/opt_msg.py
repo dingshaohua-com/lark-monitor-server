@@ -214,13 +214,13 @@ async def _count_bot_stats_dedup(col, start: str, end: str) -> dict:
                 }
             }
         },
-        {"$project": {"content": 1, "has_bot_reply": 1}},
+        {"$project": {"content": 1, "has_bot_reply": 1, "message_id": 1}},
     ]
 
     docs = await col.aggregate(pipeline).to_list(length=None)
 
     if not docs:
-        return {"total": 0, "bot_count": 0, "bot_ratio": 0, "original_total": 0}
+        return {"total": 0, "bot_count": 0, "bot_ratio": 0, "original_total": 0, "duplicate_groups": []}
 
     original_total = len(docs)
     groups = deduplicate_docs(docs)
@@ -230,11 +230,27 @@ async def _count_bot_stats_dedup(col, start: str, end: str) -> dict:
         if any(docs[i].get("has_bot_reply", False) for i in group)
     )
 
+    duplicate_groups = []
+    for group in groups:
+        if len(group) < 2:
+            continue
+        items = []
+        for i in group:
+            d = docs[i]
+            fields = d.get("content", {}).get("fields", {})
+            items.append({
+                "message_id": d.get("message_id", ""),
+                "user_content": fields.get("user_content", ""),
+                "feedback_time": fields.get("feedback_time", ""),
+            })
+        duplicate_groups.append({"count": len(items), "items": items})
+
     return {
         "total": total,
         "bot_count": bot_count,
         "bot_ratio": round(bot_count / total * 100, 1) if total else 0,
         "original_total": original_total,
+        "duplicate_groups": duplicate_groups,
     }
 
 
