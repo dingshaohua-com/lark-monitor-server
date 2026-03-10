@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from server.router.index import router
 from server.utils.db_helper import init_db, close_db
 from server.utils.lark_client import init_lark_client
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+load_dotenv()
 
 
 @asynccontextmanager
