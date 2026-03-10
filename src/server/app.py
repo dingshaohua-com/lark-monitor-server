@@ -4,6 +4,7 @@ from server.router.index import router
 from server.utils.db_helper import init_db, close_db
 from server.utils.lark_client import init_lark_client
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 
 @asynccontextmanager
@@ -26,4 +27,6 @@ server.add_middleware(
 )
 # 只需注册一次聚合路由
 server.include_router(router)
+# 静态文件挂载（放在路由之后，避免覆盖 API）
+server.mount("/", StaticFiles(directory="src/server/static", html=True), name="static")
 

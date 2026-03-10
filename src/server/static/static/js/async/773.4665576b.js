@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunk_repo_main=self.webpackChunk_repo_main||[]).push([["773"],{5804(e,r,a){a.r(r),a.d(r,{default:()=>l});var c=a(8525),t=a(2085);let l=()=>{let e,r=(0,t.c)(1);return r[0]===Symbol.for("react.memo_cache_sentinel")?(e=(0,c.jsx)("div",{children:"teacher"}),r[0]=e):e=r[0],e}}}]);
